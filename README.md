@@ -16,6 +16,13 @@ Công cụ web một trang (HTML + JavaScript thuần, không cần cài đặt)
 | **Bản gọn** (mặc định) | `index.html` hoặc `#thang` | Làm việc hằng tháng: Tháng này · Nhân sự · Đối chiếu cả năm · Nhập số cơ quan |
 | **Bản đầy đủ** | `#nhap-lieu` | Tra cứu chi tiết: bảng tính, biến động, đối chiếu từng người, C12, tiền chậm đóng, tham số, quy định |
 
+## Làm việc với dữ liệu thật (không đưa dữ liệu lên mạng)
+
+1. Trên bản claude.ai: bấm **File dữ liệu → Xuất file dữ liệu**, đặt mật khẩu (từ 6 ký tự). File `DuLieu_BHXH_Nous_YYYY-MM-DD.json` được mã hóa AES-256-GCM (khóa sinh từ mật khẩu bằng PBKDF2-SHA256, 250.000 vòng).
+2. Cất file trong ổ chung của P.HCNS.
+3. Mở link chạy thử → **Mở file dữ liệu** → nhập mật khẩu → chọn file. Dữ liệu chỉ được giải mã và xử lý trong trình duyệt, không gửi lên máy chủ nào (trang GitHub Pages là trang tĩnh, không có máy chủ nhận dữ liệu).
+4. Làm xong bấm **Lưu file** để tải file mới, thay file cũ trong ổ chung. Đóng trang khi còn thay đổi chưa lưu, trình duyệt sẽ hỏi lại.
+
 ## Chạy thử
 
 Mở `index.html` bằng trình duyệt. Khi không có kho dữ liệu, trang tự chạy **chế độ xem thử** với 10 nhân sự mẫu (không lưu).

@@ -190,6 +190,7 @@ td input.sug::placeholder{color:var(--warn);font-style:italic;opacity:1}
     <div class="title"><b>Theo dõi chi phí BHXH – BHYT – BHTN</b><span>P. Hành chính Nhân sự</span></div>
     <div class="spacer"></div>
     <label class="ctrl" for="ky">Kỳ <input type="month" id="ky"></label>
+    <button class="btn ghost" id="fileBtn" style="padding:5px 12px" title="Xuất / mở / lưu file dữ liệu">File dữ liệu</button>
     <a class="btn ghost" id="sw" href="#nhap-lieu" style="padding:5px 12px">Bản đầy đủ</a>
     <span id="sync" class="pill p-mute">Đang tải…</span>
   </div>
@@ -439,6 +440,7 @@ const stCls=st=>st===DU?"s-du":st===YT?"s-yt":st===HT?"s-ht":"s-no";
 function setSync(){
   const el=$("#sync");
   if(S.mode==="demo"){el.className="pill p-warn";el.textContent="Chế độ xem thử – không lưu";return}
+  if(S.mode==="file"){el.className="pill "+(S.fileDirty?"p-warn":"p-ok");el.textContent=S.fileDirty?"Có thay đổi chưa lưu file":"Đã lưu file";return}
   if(S.mode==="loading"){el.className="pill p-mute";el.textContent="Đang tải…";return}
   if(S.mode==="offline"){el.className="pill p-crit";el.textContent="Chưa kết nối được dữ liệu";return}
   if(!S.canWrite){el.className="pill p-mute";el.textContent="Chỉ xem";return}
@@ -460,6 +462,7 @@ function payload(key){
   return structuredClone(month(key));
 }
 function save(key){
+  if(S.mode==="file"){S.fileDirty=true;setSync();return}
   if(S.mode!=="live"||!S.canWrite){setSync();return}
   S.dirty.add(key);setSync();
   clearTimeout(S.timers[key]);S.timers[key]=setTimeout(()=>flush(key),900);
@@ -493,7 +496,8 @@ function render(){
   const a=document.activeElement,fid=a?.dataset?.fid,caret=a&&a.selectionStart!=null&&a.type!=="date"&&a.type!=="month"?a.selectionStart:null;
   const same=S.f.lastTab===S.tab,sc=same?[...document.querySelectorAll("#main .tw")].map(t=>[t.scrollTop,t.scrollLeft]):[],wy=window.scrollY;
   const views={"thang":vThang,"nguoi":vNguoi,"doi-chieu-nam":vNam,"co-quan":vCoQuan,"nhap-lieu":vNhapLieu,"tong-hop":vTongHop,"phan-tich":vPhanTich,"chi-phi":vChiPhi,"bien-dong":vBienDong,"tang-giam":vTangGiam,"doi-chieu":vDoiChieu,"c12":vC12,"cham-dong":vLai,"nhan-su":vNhanSu,"tham-so":vThamSo,"quy-dinh":vQuyDinh};
-  $("#main").innerHTML=(S.mode==="demo"?`<div class="banner">Trang đang chạy ở chế độ xem thử với dữ liệu mẫu vì chưa kết nối được kho dữ liệu chung (cần đăng nhập claude.ai và được chia sẻ quyền). Mọi thay đổi sẽ mất khi tải lại trang.</div>`:"")
+  $("#main").innerHTML=(S.mode==="demo"?`<div class="banner" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>Đang xem thử với <b>dữ liệu mẫu</b>. Để làm việc với dữ liệu thật, mở file dữ liệu (xuất từ bản trên claude.ai hoặc file đã lưu lần trước). Dữ liệu chỉ được đọc trong trình duyệt này, không gửi đi đâu.</span><button class="btn pri" data-act="file-open">Mở file dữ liệu</button></div>`:"")
+    +(S.mode==="file"?`<div class="banner ${S.fileDirty?"":"info"}" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>Đang làm việc trên file <b>${esc(S.fileName||"")}</b>${S.fileEnc?" (có mật khẩu)":""}. ${S.fileDirty?"<b>Có thay đổi chưa lưu</b> – bấm Lưu file trước khi đóng trang.":"Mọi thay đổi chỉ nằm trong trình duyệt cho đến khi bấm Lưu file."}</span><span style="display:flex;gap:8px"><button class="btn ${S.fileDirty?"pri":"ghost"}" data-act="file-save">Lưu file</button><button class="btn ghost" data-act="file-open">Mở file khác</button></span></div>`:"")
     +(S.mode==="live"&&!S.canWrite?`<div class="banner info">Bạn đang có quyền xem. Cần quyền Contributor hoặc Editor để nhập liệu.</div>`:"")
     +(views[S.tab]||vThang)();
   document.querySelectorAll("nav.tabs a").forEach(x=>x.setAttribute("aria-current",x.getAttribute("href")==="#"+S.tab?"page":"false"));
@@ -1251,6 +1255,8 @@ document.addEventListener("click",e=>{
     "nl-nop":()=>{const id=b.dataset.i;let r;if(id.startsWith("v")){const V=bdAll(S.ky).find(x=>x.v&&x.j===+id.slice(1));if(!V)return;r={...V.b};M.bd.push(r)}else r=M.bd[+id];
       if(!r)return;r.ngayNop=todayISO();r.tt="Đã nộp";save(S.ky);toast("Đã ghi ngày nộp hồ sơ hôm nay")},
     "nl-sua":()=>{const r=M.bd[+b.dataset.i];if(!r)return;const e=S.ns.find(x=>x.ma===r.ma);S.nl={who:e?`${e.ma} · ${e.ten}`:r.ma,loai:r.loai,ngay:r.ngayHL||"",luong:r.luongMoi===""||r.luongMoi==null?"":fmt.format(r.luongMoi),ngayNop:r.ngayNop||"",tt:r.tt||"",ghiChu:r.ghiChu||"",edit:String(b.dataset.i)};window.scrollTo(0,0)},
+    "file-open":()=>fileDlg("open"),
+    "file-save":()=>fileDlg("save"),
     "cq-soso":()=>{const L=soSoSuggest(S.ky);for(const x of L)x.e.bhxh=x.no;save("ns");toast(`Đã ghi ${L.length} mã số BHXH vào Nhân sự`)},
     "lai-add":()=>{S.lai.push({ky:S.ky,sotien:"",ngayNop:"",laiC12:"",ghiChu:""});save("lai")},
     "lai-del":()=>{S.lai.splice(i,1);save("lai")},
@@ -1293,7 +1299,7 @@ document.addEventListener("click",e=>{
     "per-del":()=>{S.cfg.periods.splice(i,1);save("cfg")},
     "demo-clear":()=>confirmDlg("Xóa toàn bộ dữ liệu mẫu (nhân sự có “(mẫu)”, các kỳ 10–11/2026 và khoản chậm đóng mẫu)?",clearDemo)
   };
-  if(A[act]){A[act]();if(!["cp-paste","cq-paste","ns-paste","cq-clear","demo-clear","cp-export","lai-dt","cl-dt","cl-auto","cl-bridge"].includes(act))render()}
+  if(A[act]){A[act]();if(!["cp-paste","cq-paste","ns-paste","cq-clear","demo-clear","cp-export","lai-dt","cl-dt","cl-auto","cl-bridge","file-open","file-save"].includes(act))render()}
 });
 /* ghi ngược từ Biến động sang Nhân sự và Chi phí tháng để không phải nhập lại */
 function syncBD(r,k,f){const e=S.ns.find(x=>x.ma===r.ma),M=month(k),msg=[];if(!r.ma||!e)return;
@@ -1389,12 +1395,60 @@ async function exportCSV(){
   try{await navigator.clipboard.writeText(lines.join("\n").replace(/,/g,"\t"));toast("Đã sao chép bảng – dán vào Excel")}catch(_){toast("Không xuất được file trong khung này")}
 }
 
+/* ================= file dữ liệu (dùng ngoài claude.ai) ================= */
+const FILE_APP="nous-bhxh",b64=u=>{const b=new Uint8Array(u);let t="";for(let i=0;i<b.length;i+=0x8000)t+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(t)},ub64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+async function fKey(pw,salt){const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function packFile(pw){const data={cfg:S.cfg,ns:S.ns,lai:S.lai,nn:S.nn,months:S.months},head={app:FILE_APP,v:1,at:new Date().toISOString(),ky:S.ky};
+  if(!pw)return JSON.stringify({...head,enc:false,data});
+  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),key=await fKey(pw,salt);
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(JSON.stringify(data)));
+  return JSON.stringify({...head,enc:true,kdf:"PBKDF2-SHA256-250000",salt:b64(salt),iv:b64(iv),ct:b64(ct)})}
+async function unpackFile(txt,pw){let j;try{j=JSON.parse(txt)}catch(_){throw new Error("File không đúng định dạng")}
+  if(j.app!==FILE_APP)throw new Error("Đây không phải file dữ liệu của tool BHXH");
+  if(!j.enc)return j.data;
+  if(!pw)throw new Error("File có mật khẩu – nhập mật khẩu rồi chọn lại file");
+  try{const key=await fKey(pw,ub64(j.salt));const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:ub64(j.iv)},key,ub64(j.ct));return JSON.parse(new TextDecoder().decode(pt))}
+  catch(_){throw new Error("Sai mật khẩu hoặc file bị hỏng")}}
+function loadFileData(d,name,enc){S.cfg={...structuredClone(DEFAULT_CFG),...(d.cfg||{})};S.ns=d.ns||[];S.lai=d.lai||[];S.nn={months:d.nn?.months||{},bridge:d.nn?.bridge||[],patches:d.nn?.patches||[]};
+  S.months={};for(const [k,v] of Object.entries(d.months||{}))S.months[k]={cp:v.cp||[],bd:v.bd||[],cq:v.cq||[],c12:v.c12||{}};
+  S.mode="file";S.canWrite=true;S.fileName=name;S.fileEnc=!!enc;S.filePw=null;S.fileDirty=false;
+  const ks=Object.keys(S.months).filter(k=>S.months[k].cp.length).sort();if(ks.length){S.ky=ks[ks.length-1];$("#ky").value=S.ky}}
+async function saveBlob(filename,data){
+  if(S.dl&&S.mode==="live"){try{await S.dl.save({filename,data});return true}catch(e){if(e?.code==="cancelled"||e?.code==="declined")return false}}
+  try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type:"application/json"}));a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);return true}
+  catch(_){toast("Trình duyệt không cho tải file trong khung này");return false}}
+function fileDlg(focus){const live=S.mode==="live",canSave=live||S.mode==="file",canOpen=!live;
+  $("#dlgBody").innerHTML=`<h3>File dữ liệu</h3>
+    <p style="margin:0 0 10px;font-size:13px">${live?"Xuất toàn bộ dữ liệu (nhân sự, các kỳ, C12, nguyên nhân) ra một file để dùng với bản chạy ngoài claude.ai. Nên đặt mật khẩu vì file có lương và mã số BHXH; cất file trong ổ chung của P.HCNS.":"Mở file dữ liệu để làm việc. Dữ liệu chỉ được đọc trong trình duyệt này, không gửi lên máy chủ nào. Làm xong bấm Lưu file để tải file mới về, rồi thay file cũ trong ổ chung."}</p>
+    <div class="fg" style="grid-template-columns:1fr">
+      <label>Mật khẩu ${live||S.mode==="file"?"(để trống = không mã hóa)":"của file (nếu có)"}<input type="password" id="fPw" autocomplete="new-password" placeholder="${S.fileEnc&&S.mode==="file"?"để trống = giữ mật khẩu đã dùng khi mở":""}"></label>
+      ${canSave?`<label>Nhập lại mật khẩu<input type="password" id="fPw2" autocomplete="new-password"></label>`:""}
+    </div>
+    <p id="fMsg" class="warn" style="margin:8px 0 0;font-size:12.5px;min-height:1em"></p>
+    <div class="row">${canOpen?`<label class="btn ${focus==="open"||!canSave?"pri":"ghost"}" style="cursor:pointer">Chọn file để mở…<input type="file" id="fOpen" accept=".json,application/json" hidden></label>`:""}
+      <span class="spacer"></span><button class="btn ghost" id="dCancel">Đóng</button>${canSave?`<button class="btn ${focus==="save"||live?"pri":"ghost"}" id="fSave">${live?"Xuất file dữ liệu":"Lưu file"}</button>`:""}</div>`;
+  const d=$("#dlg"),msg=t=>{$("#fMsg").textContent=t};d.showModal();$("#dCancel").onclick=()=>d.close();
+  if(canOpen)$("#fOpen").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;
+    if(S.mode==="file"&&S.fileDirty&&!window.__okDiscard){msg("File đang mở có thay đổi chưa lưu. Bấm Lưu file trước, hoặc chọn lại file lần nữa để bỏ thay đổi.");window.__okDiscard=true;return}
+    window.__okDiscard=false;const pw=$("#fPw").value;
+    try{const data=await unpackFile(await f.text(),pw);loadFileData(data,f.name,!!pw&&JSON.parse(await f.text()).enc);if(pw)S.filePw=pw;d.close();render();toast(`Đã mở ${f.name}: ${S.ns.length} nhân sự, ${Object.keys(S.months).length} kỳ`)}
+    catch(err){msg(err.message)}};
+  if(canSave)$("#fSave").onclick=async()=>{let pw=$("#fPw").value;const pw2=$("#fPw2").value;
+    if(pw!==pw2){msg("Hai lần nhập mật khẩu không khớp");return}
+    if(!pw&&S.mode==="file"&&S.fileEnc&&S.filePw)pw=S.filePw;
+    if(pw&&pw.length<6){msg("Mật khẩu cần ít nhất 6 ký tự");return}
+    const name=`DuLieu_BHXH_Nous_${todayISO()}.json`;const ok=await saveBlob(name,await packFile(pw));
+    if(ok){if(S.mode==="file"){S.fileDirty=false;S.fileName=name;S.fileEnc=!!pw;S.filePw=pw||null}d.close();render();toast(pw?"Đã lưu file có mật khẩu":"Đã lưu file (không mật khẩu)")}};
+}
+window.addEventListener("beforeunload",e=>{if(S.mode==="file"&&S.fileDirty){e.preventDefault();e.returnValue=""}});
 /* ================= boot ================= */
 const GON_TABS=["thang","nguoi","doi-chieu-nam","co-quan"],FULL_TABS=["nhap-lieu","tong-hop","phan-tich","tang-giam","chi-phi","bien-dong","doi-chieu","c12","cham-dong","nhan-su","tham-so","quy-dinh"];
 function route(){const h=location.hash.slice(1);
   if(FULL_TABS.includes(h)){S.ui="full";S.tab=h}else{S.ui="gon";S.tab=GON_TABS.includes(h)?h:"thang"}
   document.body.classList.toggle("gon",S.ui==="gon");const sw=$("#sw");sw.href=S.ui==="gon"?"#nhap-lieu":"#thang";sw.textContent=S.ui==="gon"?"Bản đầy đủ":"Bản gọn";render()}
 window.addEventListener("hashchange",route);
+$("#fileBtn").addEventListener("click",()=>fileDlg(S.mode==="file"?"save":"open"));
 $("#ky").addEventListener("change",e=>{if(e.target.value){S.ky=e.target.value;render()}});
 function demoData(){
   const n=(ma,ten,bhxh,pb,cd,dt,vao,nghi,luong)=>({ma,ten:ten+" (mẫu)",bhxh,pb,cd,dt,ngayVao:vao,ngayNghi:nghi,luong});
