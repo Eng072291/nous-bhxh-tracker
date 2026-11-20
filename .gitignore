@@ -1,0 +1,8 @@
+*.xlsx
+*.xls
+*.pdf
+*.csv
+*seed*.json
+c12-*.json
+data/
+.DS_Store
