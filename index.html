@@ -527,6 +527,50 @@ function card(title,desc,tools,body){return`<section class="card"><div class="ca
 
 /* ================= views ================= */
 function yearKys(){const y=S.ky.slice(0,4);return Array.from({length:12},(_,i)=>`${y}-${pad2(i+1)}`)}
+/* ================= Kiểm tra trước khi nộp D02-LT ================= */
+const D02K={tang:"Tăng",giam:"Giảm",dc:"Điều chỉnh lương"};
+const D02PA={"Tăng mới":"TM – tăng mới","Đi làm lại":"ON – đi làm lại","Giảm – nghỉ việc":"GH – giảm hẳn","Giảm – thai sản":"TS – thai sản","Giảm – ốm dài ngày":"OF – nghỉ ốm","Giảm – nghỉ không lương":"KL – nghỉ không lương","Điều chỉnh lương":"DL – điều chỉnh lương"};
+function d02Kind(pa){const t=nkey(pa);if(!t)return"";
+  if(/^(dl|dc|cd)\b|dieu chinh/.test(t))return"dc";
+  if(/^(tm|tc|on|tn|tu)\b|tang|di lam lai/.test(t))return"tang";
+  if(/^(gh|gc|kl|ts|of|nh|gd)\b|giam|nghi/.test(t))return"giam";return""}
+function kyOf(v){const t=String(v||"").trim();let m=t.match(/^(\d{4})-(\d{1,2})/);if(m)return`${m[1]}-${pad2(+m[2])}`;m=t.match(/(\d{1,2})[\/.-](\d{4})$/);return m?`${m[2]}-${pad2(+m[1])}`:""}
+/* danh sách D02-LT đúng theo tool: ai, phương án, từ tháng, mức lương */
+function d02Expected(k){const nm=nsMap(),C=new Map(calcMonth(k).map(o=>[o.r.ma,o])),out=[];
+  const P=S.months[prevKy(k)],prevG=new Set((P?.bd||[]).filter(b=>(b.loai||"").startsWith("Giảm")).map(b=>b.ma+"|"+b.loai));
+  for(const x of bdAll(k)){const b=x.b,l=b.loai||"";if(!b.ma||!D02PA[l])continue;
+    if(l.startsWith("Giảm")&&prevG.has(b.ma+"|"+l))continue; /* đang tiếp diễn / đã báo kỳ trước */
+    const e=nm.get(b.ma),o=C.get(b.ma),paid=!!o&&o.st===DU;
+    const kind=isTang(l)?"tang":l==="Điều chỉnh lương"?"dc":"giam";
+    const tu=kind==="tang"?(paid?k:nextKy(k)):kind==="giam"?(paid?nextKy(k):k):k;
+    const luong=kind==="giam"?null:(+b.luongMoi||+(o?.luong)||lastLuong(b.ma,k)?.luong||+e?.luong||0);
+    out.push({ma:b.ma,ten:e?.ten||b.ma,so:normBHXH(e?.bhxh),kind,pa:D02PA[l],tu,luong,x})}
+  return out}
+function d02Check(k){const M=month(k),D=M.d02?.rows||[],E=d02Expected(k),lt=limits(k).lttv,used=new Set();
+  const find=e=>{let i=e.so?D.findIndex((r,j)=>!used.has(j)&&normBHXH(r.so)===e.so):-1;if(i<0)i=D.findIndex((r,j)=>!used.has(j)&&nkey(r.ten)===nkey(e.ten));return i};
+  const res=E.map(e=>{const err=[];if(!e.so&&e.pa.slice(0,2)!=="TM")err.push("Nhân sự chưa có mã số BHXH");
+    if(!M.d02)return{e,r:null,err};
+    const i=find(e),r=i>=0?D[i]:null;if(i>=0)used.add(i);
+    if(!r){err.unshift("Không có trên D02 – sẽ bị sót hồ sơ");return{e,r,err}}
+    const kd=d02Kind(r.pa);if(r.pa&&kd&&kd!==e.kind)err.push(`Phương án “${r.pa}” – đúng là ${e.pa}`);if(!r.pa)err.push("Chưa ghi phương án");
+    const tu=kyOf(r.tu);if(!tu)err.push("Chưa ghi từ tháng");else if(tu!==e.tu)err.push(`Từ tháng ${kyLabel(tu)} – đúng là ${kyLabel(e.tu)}`);
+    if(e.kind!=="giam"){const lg=parseNum(r.luong);if(lg===""||!+lg)err.push("Chưa ghi mức lương");else{if(e.luong&&Math.abs(+lg-e.luong)>1)err.push(`Lương ${money(+lg)} – bảng tính ${money(e.luong)}`);if(+lg<lt)err.push(`Lương thấp hơn tối thiểu vùng ${money(lt)}`)}}
+    return{e,r,err}});
+  const nm=nsMap(),bySo=new Map(S.ns.filter(e=>e.bhxh).map(e=>[normBHXH(e.bhxh),e]));
+  const extra=D.filter((_,j)=>!used.has(j)).map(r=>({r,e:bySo.get(normBHXH(r.so))||S.ns.find(e=>nkey(e.ten)===nkey(r.ten))}));
+  const nErr=res.filter(x=>x.err.length).length+extra.length;
+  return{res,extra,E,has:!!M.d02,at:M.d02?.at,nErr,ok:!!M.d02&&!nErr&&E.length>0}}
+function d02Card(k){const R=d02Check(k),pend=R.res.filter(x=>!x.e.x.b.ngayNop&&bdCQ(x.e.x.b,k,nsMap())!==true);
+  if(!R.E.length&&!R.has)return card("Kiểm tra trước khi nộp D02-LT",`Kỳ ${kyLabel(k)} chưa có biến động cần báo cơ quan.`,"",`<p class="muted" style="margin:0">Khi ghi sự kiện tăng, giảm hoặc đổi lương, danh sách D02-LT đúng sẽ hiện ở đây để đối chiếu trước khi nộp.</p>`);
+  const head=!R.has?`<div class="impact"><b>Chưa kiểm tra.</b> Lập D02-LT trên phần mềm kê khai theo bảng dưới, xuất ra Excel rồi bấm <b>Dán D02-LT để kiểm tra</b>. Tool so từng dòng: thiếu người, sai phương án, sai từ tháng, sai mức lương.</div>`
+    :R.ok?`<div class="impact" style="border-left-color:var(--ok)"><span class="st s-du">Đạt</span> Bản D02-LT dán lúc ${dVN(R.at)} khớp đủ ${R.E.length} dòng – có thể nộp.${pend.length?` <button class="btn pri" style="padding:3px 10px;margin-left:6px" data-w data-act="d02-nop">Ghi đã nộp hôm nay (${pend.length} hồ sơ)</button>`:""}</div>`
+    :`<div class="impact"><span class="st s-yt">Chưa nên nộp</span> Bản D02-LT dán lúc ${dVN(R.at)} còn <b>${R.nErr}</b> dòng lỗi. Sửa trên phần mềm kê khai, xuất lại và dán lại để kiểm tra.</div>`;
+  const rows=R.res.map(x=>`<tr><td><b>${esc(x.e.ten)}</b><div class="muted" style="font-size:11px">${esc(x.e.so||"chưa có số sổ")}</div></td><td>${esc(x.e.pa)}</td><td>${kyLabel(x.e.tu)}</td><td class="num">${x.e.luong?money(x.e.luong):"–"}</td>
+    ${R.has?`<td>${x.r?`${esc(x.r.pa||"")}${x.r.tu?" · "+esc(x.r.tu):""}${x.r.luong?" · "+money(+x.r.luong):""}`:'<span class="muted">không có</span>'}</td><td class="${x.err.length?"warn":""}" style="font-size:12px;min-width:200px">${x.err.length?x.err.map(esc).join("<br>"):'<span class="st s-du">khớp</span>'}</td>`:`<td class="warn" style="font-size:12px">${x.err.map(esc).join("<br>")}</td>`}</tr>`).join("")
+   +R.extra.map(x=>`<tr><td><b>${esc(x.r.ten||x.e?.ten||"")}</b><div class="muted" style="font-size:11px">${esc(x.r.so||"")}</div></td><td colspan="3" class="muted">tool không có biến động kỳ này</td><td>${esc(x.r.pa||"")}${x.r.tu?" · "+esc(x.r.tu):""}</td><td class="warn" style="font-size:12px">Có trên D02 nhưng không có trong biến động – kiểm tra lại, hoặc ghi sự kiện cho người này</td></tr>`).join("");
+  const tbl=`<div class="tw" style="max-height:none;margin-top:10px"><table><thead><tr><th>Nhân sự</th><th>Phương án đúng</th><th>Từ tháng</th><th class="num">Mức lương</th>${R.has?"<th>Trên D02 đã dán</th><th>Kết quả</th>":"<th>Lưu ý</th>"}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  const tools=`<button class="btn ghost" data-w data-act="d02-copy">Sao chép danh sách</button>${R.has?`<button class="btn ghost" data-w data-act="d02-clear">Xóa bản đã dán</button>`:""}<button class="btn pri" data-w data-act="d02-paste">${R.has?"Dán lại D02-LT":"Dán D02-LT để kiểm tra"}</button>`;
+  return`<div id="d02-card"></div>`+card("Kiểm tra trước khi nộp D02-LT",`Danh sách đúng theo bảng tính và biến động kỳ ${kyLabel(k)}: ai, phương án, từ tháng nào, mức lương bao nhiêu. Từ tháng = tháng đầu tiên bắt đầu (hoặc thôi) đóng đủ.`,tools,head+tbl)}
 /* ================= Cửa sổ nhập liệu: một form ghi vào mọi nơi liên quan ================= */
 const NL_DAYS={"Giảm – thai sản":["ts","Số ngày thai sản trong tháng"],"Giảm – ốm dài ngày":["om","Số ngày nghỉ ốm trong tháng"],"Giảm – nghỉ không lương":["kl","Số ngày nghỉ KL trong tháng"],"Tăng mới":["kl","Số ngày chưa đi làm trong tháng"],"Giảm – nghỉ việc":["kl","Số ngày không làm sau ngày nghỉ"]};
 /* giải thích nghiệp vụ cho từng sự kiện – để người mới hiểu tool đang tính gì */
@@ -571,7 +615,7 @@ function nlSave(){const P=nlPlan();if(P.err.length){toast(P.err[0]);return}
   save(k);S.nl={};toast(`Đã lưu: ${e.ten} – ${l}`)}
 function nlParts(){
   const k=S.ky,M=month(k),c=M.c12||{},d=S.nl,s=monthSummary(k),calc=calcMonth(k),nm=nsMap(),ALL=bdAll(k),tol=+S.cfg.tol||0;
-  const chk=ALL.map(x=>bdChecks(x.b,M,k,nm)),pr=payRows().find(x=>x.k===k)||{};
+  const chk=ALL.map(x=>bdChecks(x.b,M,k,nm)),DQ=d02Check(k),pr=payRows().find(x=>x.k===k)||{};
   const hasC12=s.c12!=null,o=S.nn.months[k]||{},man=(o.chenhCT||[]).reduce((a,y)=>a+(+y.soTien||0),0);
   const explained=!hasC12?null:Math.abs(s.chenh)<=tol||((o.chenhCT||[]).length?Math.abs(man-s.chenh)<=tol:M.cq.length>0);
   const today=todayISO(),hanBD=eom(k),hanNop=eom(k,1),nk=nextKy(k),cNext=month(nk).c12||{};
@@ -583,7 +627,7 @@ function nlParts(){
   const afterK=today>hanBD;
   const steps=`<div class="steps">
     ${step(M.cp.length?(warnN?"todo":"ok"):"todo",1,"Tạo bảng tính tháng",M.cp.length?`${M.cp.length} người, ${s.du} đóng đủ${warnN?`, ${warnN} dòng có cảnh báo`:""}`:"Bấm tạo: tool lấy danh sách tháng trước, bỏ người nghỉ việc, thêm người mới.",`đầu tháng ${kyLabel(k)}`,M.cp.length?go("chi-phi","Xem bảng"):`<button class="btn pri" style="padding:3px 10px" data-w data-act="cp-gen">Tạo bảng kỳ này</button>`)}
-    ${step(hsN?"todo":"ok",2,"Ghi sự kiện & nộp hồ sơ",`${ALL.length} sự kiện${hsN?`, ${hsN} chưa xong hồ sơ`:", hồ sơ đủ"}. Dùng form bên dưới.`,dVN(hanBD)+" (trong tháng phát sinh)","")}
+    ${step(hsN||(DQ.E.length&&!DQ.ok&&DQ.res.some(x=>!x.e.x.b.ngayNop))?"todo":"ok",2,"Ghi sự kiện & nộp hồ sơ",`${ALL.length} sự kiện${hsN?`, ${hsN} chưa xong hồ sơ`:", hồ sơ đủ"}. D02-LT: ${!DQ.E.length?"không cần":DQ.ok?"đã kiểm tra, đạt":DQ.has?`còn ${DQ.nErr} lỗi`:"chưa kiểm tra"}.`,dVN(hanBD)+" (trong tháng phát sinh)",DQ.E.length&&!DQ.ok?`<button class="btn ghost" style="padding:3px 10px" data-w data-act="go-d02">Kiểm tra D02-LT</button>`:"")}
     ${step(M.cq.length?(s.open?"todo":"ok"):(afterK?"todo":"wait"),3,"Dán danh sách của cơ quan",M.cq.length?`${M.cq.length} người, ${s.open} người lệch chưa xử lý`:"Danh sách chi tiết theo người (tải trên cổng BHXH hoặc kèm C12).",`đầu tháng ${kyLabel(nk)}`,`<button class="btn ${M.cq.length?"ghost":"pri"}" style="padding:3px 10px" data-w data-act="cq-paste">${M.cq.length?"Dán lại":"Dán danh sách"}</button>${M.cq.length?" "+go("doi-chieu","Xem lệch"):""}`)}
     ${step(hasC12?"ok":(afterK?"todo":"wait"),4,"Nhập thông báo C12",hasC12?`C12 ${money(s.c12)}, nội bộ ${money(s.tong)}, chênh ${money(s.chenh)}`:"Nhập mục B ở phần “Số liệu cơ quan” cuối trang.",`đầu tháng ${kyLabel(nk)}`,"")}
     ${step(pr.paid!=null?(pr.diff!=null&&pr.diff<-tol?"todo":"ok"):(afterK?"todo":"wait"),5,"Đối chiếu số đã nộp",pr.paid!=null?`Mục C: đã nộp ${money(pr.paid)}${pr.diff!=null?(pr.diff<-tol?`, thiếu ${money(-pr.diff)} so với kỳ trước`:", đủ số phải nộp kỳ trước"):""}`:"Nhập mục A, C, Đ trên C12 kỳ này – tool kiểm tra nộp đủ chưa.",`nộp số Đ trước ${dVN(hanNop)}`,"")}
@@ -594,6 +638,7 @@ function nlParts(){
   /* việc cần làm, xếp theo mức gấp */
   const T=[],P_=["","pri-1","pri-2","pri-3"],PL=["","Gấp","Cần làm","Nên xem"];
   const left=d=>{const n=daysBetween(today,d);return n<0?`quá hạn ${-n} ngày`:n===0?"hạn hôm nay":`còn ${n} ngày`};
+  if(DQ.E.length&&!DQ.ok&&DQ.res.some(x=>!x.e.x.b.ngayNop))T.push([DQ.has||today>=addDay(hanBD,-5)?1:2,DQ.has?`D02-LT đã dán còn <b>${DQ.nErr}</b> dòng lỗi (thiếu người, sai từ tháng hoặc sai lương) – sửa trước khi nộp.`:`Kiểm tra D02-LT trước khi nộp: ${DQ.E.length} người cần báo cơ quan kỳ này.`,`<button class="btn ghost" style="padding:3px 9px" data-w data-act="go-d02">Kiểm tra</button>`]);
   ALL.forEach((x,n)=>{const b=x.b,cq=bdCQ(b,k,nm),ten=esc(nm.get(b.ma)?.ten||b.ma);
     if(cq===false)T.push([1,`<b>${ten}</b> – ${esc(b.loai)}: danh sách cơ quan chưa ghi nhận. Kiểm tra hồ sơ đã nộp / nộp lại.`,go("tang-giam","Xem")]);
     else if(cq==null&&!b.ngayNop&&b.tt!=="Đã duyệt"&&b.loai!=="Điều chỉnh khác")T.push([today>=addDay(hanBD,-5)?1:2,`<b>${ten}</b> – ${esc(b.loai)}: chưa nộp hồ sơ (${left(hanBD)}).`,`<button class="btn ghost" style="padding:3px 9px" data-w data-act="nl-nop" data-i="${x.v?"v"+x.j:x.i}">Đã nộp hôm nay</button>`])});
@@ -663,6 +708,7 @@ function vThang(){const p=nlParts(),k=p.k,s=p.s,tol=+S.cfg.tol||0,has=s.chenh!=n
   return patchBanner()+card(`Tháng ${kyLabel(k)}`,"Đổi tháng ở ô “Kỳ” phía trên. Làm lần lượt các bước đến khi tất cả “Xong”.","",hero+p.tl+p.steps)
    +card("Việc cần làm","Việc gấp lên đầu. Làm hết danh sách này là xong tháng.","",p.todo)
    +`<div id="nl-form"></div>`+card("Ghi sự kiện nhân sự","Người vào, nghỉ, thai sản, ốm dài ngày, nghỉ không lương, đi làm lại, đổi lương. Lưu một lần, tool tự ghi vào bảng tính, biến động và danh sách nhân sự.","",p.form+p.list)
+   +d02Card(k)
    +`<section class="card">${p.gl}</section>`}
 function vCoQuan(){const p=nlParts(),k=p.k,M=month(k),s=p.s;
   const ds=`<div class="impact">${M.cq.length?`Đã có danh sách ${M.cq.length} người · <b>${s.open}</b> người lệch với nội bộ`:"Chưa có danh sách chi tiết theo người của kỳ này."}</div>
@@ -719,6 +765,7 @@ function vNhapLieu(){const p=nlParts(),k=p.k;
   return patchBanner()+card(`Nhập liệu kỳ ${kyLabel(k)}`,"Bắt đầu ở đây. Làm lần lượt 6 bước cho đến khi tất cả “Xong”. Mọi thông tin chỉ nhập một lần trên trang này, tool tự ghi sang các mục khác.","",p.tl+p.steps)
    +card("Việc cần làm",`Tool tự gom các việc còn tồn của kỳ ${kyLabel(k)}, việc gấp lên đầu.`,"",p.todo)
    +card("Bước 2 · Ghi sự kiện nhân sự","Có người vào, nghỉ, thai sản, ốm dài ngày, nghỉ không lương, đi làm lại hoặc đổi lương thì ghi ở đây. Chọn sự kiện xong, khung xanh sẽ nhắc quy định liên quan. Người chưa có trong danh sách: gõ mã mới, form hiện thêm ô họ tên, số sổ.","",p.form+p.list)
+   +d02Card(k)
    +card(`Số liệu cơ quan BHXH kỳ ${kyLabel(k)}`,"Lấy từ thông báo C12-TS của kỳ này (cơ quan gửi đầu tháng sau). Mỗi ô ghi đúng tên mục trên thông báo. Danh sách chi tiết theo người dán ở bước 3.","",p.c12)
    +`<section class="card">${p.gl}</section>`;
 }
@@ -941,7 +988,7 @@ function vBienDong(){
     <div class="kpi"><small>Điều chỉnh</small><b>${n(b=>(b.loai||"").startsWith("Điều chỉnh"))}</b></div>
     <div class="kpi ok"><small>Cơ quan đã ghi nhận</small><b>${cqs.filter(v=>v===true).length}/${cqs.filter(v=>v!=null).length}</b><span>${cqs.some(v=>v!=null)?"so với DS cơ quan đã dán":"chưa dán DS cơ quan"}</span></div>
     <div class="kpi acc"><small>Cần xử lý hồ sơ</small><b>${chk.filter(w=>w.length).length}</b></div></div>`;
-  return card(`Biến động kỳ ${kyLabel(S.ky)}`,"Dòng “tự động” do tool suy ra, không cần nhập: tăng/giảm theo ngày vào – nghỉ việc ở Nhân sự, điều chỉnh lương khi lương ở Chi phí khác tháng trước. Sửa bất kỳ ô nào của dòng tự động thì dòng được lưu lại. Ghi ở đây sẽ tự cập nhật nơi khác: ngày hiệu lực của Tăng mới / Giảm – nghỉ việc ghi vào ngày vào / ngày nghỉ ở Nhân sự (giảm: ghi ngày làm việc cuối cùng); lương mới ghi vào Chi phí tháng (Tăng mới chưa có dòng thì tự thêm). Thai sản, ốm dài ngày, nghỉ KL chỉ ghi một lần ở tháng bắt đầu, các tháng sau tự tính đến khi có “Đi làm lại”. Khi đã dán DS cơ quan, tool tự xác nhận biến động nào cơ quan đã ghi nhận.",
+  return d02Card(S.ky)+card(`Biến động kỳ ${kyLabel(S.ky)}`,"Dòng “tự động” do tool suy ra, không cần nhập: tăng/giảm theo ngày vào – nghỉ việc ở Nhân sự, điều chỉnh lương khi lương ở Chi phí khác tháng trước. Sửa bất kỳ ô nào của dòng tự động thì dòng được lưu lại. Ghi ở đây sẽ tự cập nhật nơi khác: ngày hiệu lực của Tăng mới / Giảm – nghỉ việc ghi vào ngày vào / ngày nghỉ ở Nhân sự (giảm: ghi ngày làm việc cuối cùng); lương mới ghi vào Chi phí tháng (Tăng mới chưa có dòng thì tự thêm). Thai sản, ốm dài ngày, nghỉ KL chỉ ghi một lần ở tháng bắt đầu, các tháng sau tự tính đến khi có “Đi làm lại”. Khi đã dán DS cơ quan, tool tự xác nhận biến động nào cơ quan đã ghi nhận.",
     `<button class="btn pri" data-w data-act="bd-add">+ Thêm biến động</button>`,kpi)
    +`<section class="card" style="padding:12px"><div class="tw"><table><thead><tr><th class="sticky">Mã NV</th><th>Họ tên</th><th>Loại biến động</th><th>Ngày hiệu lực</th><th class="num">Lương cũ</th><th class="num">Lương mới</th><th>Ngày nộp hồ sơ</th><th>Mẫu hồ sơ</th><th>Trạng thái</th><th>Kiểm tra</th><th>Ghi chú</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
@@ -1257,6 +1304,12 @@ document.addEventListener("click",e=>{
     "nl-sua":()=>{const r=M.bd[+b.dataset.i];if(!r)return;const e=S.ns.find(x=>x.ma===r.ma);S.nl={who:e?`${e.ma} · ${e.ten}`:r.ma,loai:r.loai,ngay:r.ngayHL||"",luong:r.luongMoi===""||r.luongMoi==null?"":fmt.format(r.luongMoi),ngayNop:r.ngayNop||"",tt:r.tt||"",ghiChu:r.ghiChu||"",edit:String(b.dataset.i)};window.scrollTo(0,0)},
     "file-open":()=>fileDlg("open"),
     "file-save":()=>fileDlg("save"),
+    "d02-paste":()=>pasteDlg(`Dán D02-LT kỳ ${kyLabel(S.ky)} để kiểm tra`,PASTE.d02,objs=>{M.d02={at:todayISO(),rows:objs.map(o=>({so:normBHXH(o.so)||"",ten:String(o.ten||"").trim(),pa:String(o.pa||"").trim(),tu:String(o.tu||"").trim(),luong:parseNum(o.luong)}))};save(S.ky);return M.d02.rows.length}),
+    "d02-clear":()=>{delete M.d02;save(S.ky)},
+    "d02-nop":()=>{const R=d02Check(S.ky);if(!R.ok)return;let n=0;const nm=nsMap();for(const x of R.res){const b=x.e.x.b;if(b.ngayNop||bdCQ(b,S.ky,nm)===true)continue;let r=b;if(x.e.x.v){r={...b};M.bd.push(r)}r.ngayNop=todayISO();r.tt="Đã nộp";n++}save(S.ky);toast(`Đã ghi nộp hồ sơ hôm nay cho ${n} người`)},
+    "d02-copy":async()=>{const E=d02Expected(S.ky);const t=["Họ tên\tMã số BHXH\tPhương án\tTừ tháng\tMức lương"].concat(E.map(e=>[e.ten,e.so,e.pa.slice(0,2),e.tu.slice(5)+"/"+e.tu.slice(0,4),e.luong||""].join("\t"))).join("\n");
+      try{await navigator.clipboard.writeText(t);toast(`Đã sao chép ${E.length} dòng – dán vào Excel để đối chiếu`)}catch(_){toast("Trình duyệt chặn sao chép trong khung này")}},
+    "go-d02":()=>{S.scrollTo="d02-card";location.hash=S.ui==="gon"?"#thang":"#bien-dong"},
     "cq-soso":()=>{const L=soSoSuggest(S.ky);for(const x of L)x.e.bhxh=x.no;save("ns");toast(`Đã ghi ${L.length} mã số BHXH vào Nhân sự`)},
     "lai-add":()=>{S.lai.push({ky:S.ky,sotien:"",ngayNop:"",laiC12:"",ghiChu:""});save("lai")},
     "lai-del":()=>{S.lai.splice(i,1);save("lai")},
@@ -1299,7 +1352,7 @@ document.addEventListener("click",e=>{
     "per-del":()=>{S.cfg.periods.splice(i,1);save("cfg")},
     "demo-clear":()=>confirmDlg("Xóa toàn bộ dữ liệu mẫu (nhân sự có “(mẫu)”, các kỳ 10–11/2026 và khoản chậm đóng mẫu)?",clearDemo)
   };
-  if(A[act]){A[act]();if(!["cp-paste","cq-paste","ns-paste","cq-clear","demo-clear","cp-export","lai-dt","cl-dt","cl-auto","cl-bridge","file-open","file-save"].includes(act))render()}
+  if(A[act]){A[act]();if(!["cp-paste","cq-paste","ns-paste","cq-clear","demo-clear","cp-export","lai-dt","cl-dt","cl-auto","cl-bridge","file-open","file-save","d02-paste","d02-copy"].includes(act))render()}
 });
 /* ghi ngược từ Biến động sang Nhân sự và Chi phí tháng để không phải nhập lại */
 function syncBD(r,k,f){const e=S.ns.find(x=>x.ma===r.ma),M=month(k),msg=[];if(!r.ma||!e)return;
@@ -1321,6 +1374,8 @@ async function clearDemo(){
   S.lai=S.lai.filter(x=>!/^Mẫu/.test(x.ghiChu||""));save("lai");render();toast("Đã xóa dữ liệu mẫu");
 }
 const PASTE={
+  d02:{help:"Xuất danh sách D02-LT vừa lập từ phần mềm kê khai (hoặc cổng dịch vụ công) ra Excel, chọn cả bảng kèm dòng tiêu đề rồi dán. Cột cần có: Họ tên, Mã số BHXH, Phương án, Từ tháng, Mức lương.",
+    fields:[["ten","Họ tên",/họ.*tên|^tên/i],["so","Mã số BHXH",/mã\s*(số)?\s*bhxh|số sổ|mã số/i],["pa","Phương án",/phương án|^pa$|loại/i],["tu","Từ tháng",/từ\s*tháng|^từ$/i],["den","Đến tháng",/đến\s*tháng|^đến$/i],["luong","Mức lương",/lương|mức đóng|tiền/i]]},
   cp:{help:"Cột cần có: Mã NV, Lương đóng BH, Ngày nghỉ KL, Ngày nghỉ ốm, Ngày thai sản, Thỏa thuận (Có). Có thể dán kèm dòng tiêu đề để tool tự nhận cột; không có tiêu đề thì dán đúng thứ tự trên.",
     fields:[["ma","Mã NV",/mã\s*(nv|nhân viên)|^mã$|^id$/i],["luong","Lương đóng BH",/lương/i],["kl","Nghỉ KL",/không lương|\bkl\b/i],["om","Nghỉ ốm",/ốm/i],["ts","Thai sản",/thai sản|\bts\b/i],["tt","Thỏa thuận",/thỏa thuận|thoả thuận/i]]},
   cq:{help:"Cột cần có: Mã số BHXH, Họ tên, Lương đóng, BHXH, BHYT, BHTN (tổng phần DN + NLĐ). Có thể dán kèm dòng tiêu đề của file cơ quan BHXH để tool tự nhận cột.",
@@ -1411,7 +1466,7 @@ async function unpackFile(txt,pw){let j;try{j=JSON.parse(txt)}catch(_){throw new
   try{const key=await fKey(pw,ub64(j.salt));const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:ub64(j.iv)},key,ub64(j.ct));return JSON.parse(new TextDecoder().decode(pt))}
   catch(_){throw new Error("Sai mật khẩu hoặc file bị hỏng")}}
 function loadFileData(d,name,enc){S.cfg={...structuredClone(DEFAULT_CFG),...(d.cfg||{})};S.ns=d.ns||[];S.lai=d.lai||[];S.nn={months:d.nn?.months||{},bridge:d.nn?.bridge||[],patches:d.nn?.patches||[]};
-  S.months={};for(const [k,v] of Object.entries(d.months||{}))S.months[k]={cp:v.cp||[],bd:v.bd||[],cq:v.cq||[],c12:v.c12||{}};
+  S.months={};for(const [k,v] of Object.entries(d.months||{}))S.months[k]={cp:v.cp||[],bd:v.bd||[],cq:v.cq||[],c12:v.c12||{},...(v.d02?{d02:v.d02}:{})};
   S.mode="file";S.canWrite=true;S.fileName=name;S.fileEnc=!!enc;S.filePw=null;S.fileDirty=false;
   const ks=Object.keys(S.months).filter(k=>S.months[k].cp.length).sort();if(ks.length){S.ky=ks[ks.length-1];$("#ky").value=S.ky}}
 async function saveBlob(filename,data){
@@ -1501,7 +1556,7 @@ function demoData(){
   sub(db.doc("app/laicham"),"lai",s=>{S.lai=s.exists?structuredClone(s.data().items||[]):[]});
   sub(db.doc("app/nguyennhan"),"nn",s=>{const v=s.exists?s.data():null;S.nn={months:structuredClone(v?.months||{}),bridge:structuredClone(v?.bridge||[]),patches:structuredClone(v?.patches||[])}});
   db.collection("ky").onSnapshot(snap=>{
-    for(const doc of snap.docs){if(busy(doc.id))continue;const v=doc.data()||{};S.months[doc.id]={cp:structuredClone(v.cp||[]),bd:structuredClone(v.bd||[]),cq:structuredClone(v.cq||[]),c12:structuredClone(v.c12||{})}}
+    for(const doc of snap.docs){if(busy(doc.id))continue;const v=doc.data()||{};S.months[doc.id]={cp:structuredClone(v.cp||[]),bd:structuredClone(v.bd||[]),cq:structuredClone(v.cq||[]),c12:structuredClone(v.c12||{}),...(v.d02?{d02:structuredClone(v.d02)}:{})}}
     for(const ch of snap.docChanges())if(ch.type==="removed"&&!busy(ch.doc.id))delete S.months[ch.doc.id];
     if(!first.ky&&!snap.metadata?.fromCache){first.ky=1;done()}else if(S.mode==="live")requestRender();
   },onErr);

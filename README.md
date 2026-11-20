@@ -7,6 +7,7 @@ Công cụ web một trang (HTML + JavaScript thuần, không cần cài đặt)
 - tính số BHXH, BHYT, BHTN phải đóng của từng người theo tháng (tỷ lệ 32%, sàn/trần lương, quy tắc 14 ngày, BHYT tháng báo giảm, người nước ngoài, người hưởng lương hưu);
 - ghi sự kiện tăng, giảm, thai sản, ốm dài ngày, nghỉ không lương, điều chỉnh lương bằng **một form**; tool tự cập nhật bảng tính, biến động và danh sách nhân sự;
 - đối chiếu với **danh sách chi tiết** và **thông báo C12-TS** của cơ quan BHXH: chênh lệch theo từng người, theo tháng, lũy kế cả năm;
+- **kiểm tra D02-LT trước khi nộp**: dán bản D02-LT vừa lập, tool so với bảng tính và biến động để phát hiện thiếu người, sai phương án, sai "từ tháng", sai mức lương;
 - kiểm tra số đã nộp (Đ = A + B − C), tiền chậm đóng (0,03%/ngày) và nguyên nhân phát sinh.
 
 ## Hai phiên bản trong cùng một trang
