@@ -1,5 +1,7 @@
 # Theo dõi chi phí BHXH – BHYT – BHTN
 
+**Chạy thử ngay:** https://eng072291.github.io/nous-bhxh-tracker/ (chế độ xem thử, dữ liệu mẫu, không lưu)
+
 Công cụ web một trang (HTML + JavaScript thuần, không cần cài đặt) giúp phòng Hành chính – Nhân sự:
 
 - tính số BHXH, BHYT, BHTN phải đóng của từng người theo tháng (tỷ lệ 32%, sàn/trần lương, quy tắc 14 ngày, BHYT tháng báo giảm, người nước ngoài, người hưởng lương hưu);
